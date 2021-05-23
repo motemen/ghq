@@ -1,8 +1,13 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
@@ -26,6 +31,17 @@ type GitHubRepository struct {
 	url *url.URL
 }
 
+// NewGitHubRepository returns new GitHubRepository object from URL
+func NewGitHubRepository(u *url.URL) *GitHubRepository {
+	url := *u
+	name, _ := _GitHubResolveName(_GitHubGetName(u.Path))
+	url.Path = path.Join("/", name)
+	if strings.HasSuffix(u.Path, ".git") {
+		url.Path += ".git"
+	}
+	return &GitHubRepository{url: &url}
+}
+
 // URL reutrns URL of the repository
 func (repo *GitHubRepository) URL() *url.URL {
 	return repo.url
@@ -43,14 +59,49 @@ func (repo *GitHubRepository) IsValid() bool {
 
 // VCS returns VCSBackend of the repository
 func (repo *GitHubRepository) VCS() (*VCSBackend, *url.URL, error) {
-	u := *repo.url
-	pathComponents := strings.Split(strings.Trim(strings.TrimSuffix(u.Path, ".git"), "/"), "/")
-	path := "/" + strings.Join(pathComponents[0:2], "/")
-	if strings.HasSuffix(u.String(), ".git") {
-		path += ".git"
+	return GitBackend, repo.URL(), nil
+}
+
+type _GithubRepo struct {
+	FullName string `json:"full_name"`
+}
+
+func _GitHubGetName(p string) string {
+	s := strings.Split(strings.Trim(strings.TrimSuffix(p, ".git"), "/"), "/")
+	return path.Join(s[0:2]...)
+}
+
+func _GitHubResolveName(n string) (string, error) {
+	u, err := newURL("https://api.github.com", false, false)
+	if err != nil {
+		return n, err
 	}
-	u.Path = path
-	return GitBackend, &u, nil
+	u.Path = path.Join(u.Path, "repos", n)
+	cli := &http.Client{}
+	req, _ := http.NewRequest(http.MethodGet, u.String(), nil)
+	req.Header.Add("User-Agent", fmt.Sprintf("ghq/%s (+https://github.com/motemen/ghq)", version))
+	resp, err := cli.Do(req)
+	if err != nil {
+		return n, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return n, errors.New(resp.Status)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return n, err
+	}
+
+	r := _GithubRepo{}
+	err = json.Unmarshal(body, &r)
+	if err != nil {
+		return n, err
+	}
+
+	return r.FullName, nil
 }
 
 // A GitHubGistRepository represents a GitHub Gist repository.
@@ -192,7 +243,7 @@ func NewRemoteRepository(u *url.URL) (RemoteRepository, error) {
 		}
 		switch u.Host {
 		case "github.com":
-			return &GitHubRepository{u}
+			return NewGitHubRepository(u)
 		case "gist.github.com":
 			return &GitHubGistRepository{u}
 		case "hub.darcs.net":

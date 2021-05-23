@@ -22,7 +22,12 @@ func TestNewRemoteRepository(t *testing.T) {
 		url:        "https://github.com/motemen/ghq/logger",
 		valid:      true,
 		vcsBackend: GitBackend,
-		repoURL:    "https://github.com/motemen/ghq",
+		repoURL:    "https://github.com/x-motemen/ghq",
+	}, {
+		url:        "https://github.com/X-Motemen/GHQ.git",
+		valid:      true,
+		vcsBackend: GitBackend,
+		repoURL:    "https://github.com/x-motemen/ghq.git",
 	}, {
 		url:        "https://example.com/motemen/pusheen-explorer/",
 		valid:      true,
